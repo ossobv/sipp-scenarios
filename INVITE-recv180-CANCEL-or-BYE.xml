@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!--
+
+This SIPp scenario does an:
+ - INVITE
+ - waits for 180 or 183 (ringing)
+ - waits some more
+ - CANCELs the call
+
+Parameters:
+ -sf invite-and-cancel.xml 
+ -m 1
+ -s authuser
+ -ap password
+ -key fromuser fromuser
+ -key domain domain
+ -key dnid destination
+ -key clid callerid-number
+ -i local_ip
+ hostname
+ (set TERM=dumb to get at least a term)
+
+Features:
+ - All recv calls have a timeout of (default) 8 seconds. That should
+   be enough even for crappy links.
+ - After ringing, we wait a bit before calling CANCEL. If the UAS picks
+   up in the mean time, we handle it gracefully.
+ - Handled timeouts to not return an errorcode. Unhandled timeouts (and
+   other errors) do.
+
+Questions:
+ - Do we need more codecs? Or less?
+
+Author:
+ Walter Doekes, april 2014.
+
+-->
+<scenario name="INVITE-recv180-CANCEL-or-BYE">
+
+  <!-- ************************************************************* -->
+  <!-- Start, send INVITE, resend with auth -->
+  <!-- ************************************************************* -->
+
+  <send retrans="500" start_txn="invite">
+    <![CDATA[
+
+      INVITE sip:[dnid]@[domain] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sip:[fromuser]@[domain];tag=[pid]SIPpTag00[call_number]
+      To: sip:[dnid]@[domain]
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Call-ID: [call_id]
+      CSeq: [cseq] INVITE
+      Max-Forwards: 30
+      Content-Type: application/sdp
+      Content-Length: [len]
+      P-Asserted-Identity: "" <sip:[clid]@[domain]>
+      Remote-Party-ID: "" <sip:[clid]@[domain]>;party=calling;privacy=off;screen=no
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true" response_txn="invite" timeout="8000"/>
+
+  <recv response="401" optional="true" next="invite-with-auth" auth="true" rrs="true" response_txn="invite" timeout="8000">
+    <action>
+      <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
+      <ereg regexp=";.*" search_in="hdr" header="To" check_it="false" assign_to="2"/>
+    </action>
+  </recv>
+
+  <recv response="407" auth="true" rrs="true" response_txn="invite" timeout="8000">
+    <action>
+      <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
+      <ereg regexp=";.*" search_in="hdr" header="To" check_it="false" assign_to="2"/>
+    </action>
+  </recv>
+
+  <label id="invite-with-auth"/>
+
+  <send ack_txn="invite">
+    <![CDATA[
+
+      ACK sip:[dnid]@[domain] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port][$1]
+      From: sip:[fromuser]@[domain];tag=[pid]SIPpTag00[call_number]
+      To: sip:[dnid]@[domain][$2]
+      Call-ID: [call_id]
+      CSeq: [cseq] ACK
+      Max-Forwards: 30
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <send retrans="500" start_txn="invite">
+    <![CDATA[
+
+      INVITE sip:[dnid]@[domain] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sip:[fromuser]@[domain];tag=[pid]SIPpTag00[call_number]
+      To: sip:[dnid]@[domain]
+      Contact: sip:[service]@[local_ip]:[local_port]
+      [authentication]
+      Call-ID: [call_id]
+      CSeq: [cseq] INVITE
+      Max-Forwards: 30
+      Content-Type: application/sdp
+      Content-Length: [len]
+      P-Asserted-Identity: "" <sip:[clid]@[domain]>
+      Remote-Party-ID: "" <sip:[clid]@[domain]>;party=calling;privacy=off;screen=no
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+
+    ]]>
+  </send>
+
+  <recv response="100" response_txn="invite" timeout="8000">
+    <action>
+      <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
+    </action>
+  </recv>
+
+  <!-- The 180 and 183 have to have a timeout, or else the timeout on
+       the 200 doesn't work. We also need next, or we'd get a wait on
+       the the 183 (if we only get a 180). -->
+  <recv response="180" optional="true" response_txn="invite" next="wait" timeout="10000" ontimeout="wait">
+    <action>
+      <assignstr assign_to="3" value="1"/>
+    </action>
+  </recv>
+
+  <recv response="183" optional="true" response_txn="invite" next="wait" timeout="10000" ontimeout="wait">
+    <action>
+      <assignstr assign_to="3" value="1"/>
+    </action>
+  </recv>
+
+  <label id="wait"/>
+
+  <!-- Wait 1.5 seconds for a 200. If we got it, handle ACK+BYE. If we
+       didn't, continue on to cancel. -->
+  <recv response="200" rrs="true" response_txn="invite" next="ack-bye" timeout="1500" ontimeout="cancel">
+    <action>
+      <assignstr assign_to="3" value="1"/>
+      <ereg regexp=";.*" search_in="hdr" header="To" check_it="false" assign_to="1"/>
+    </action>
+  </recv>
+
+
+  <!-- ************************************************************* -->
+  <!-- Got 180/183, send CANCEL -->
+  <!-- ************************************************************* -->
+
+  <label id="cancel"/>
+
+  <send>
+    <![CDATA[
+
+      CANCEL sip:[dnid]@[domain] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port][$1]
+      From: sip:[fromuser]@[domain];tag=[pid]SIPpTag00[call_number]
+      To: sip:[dnid]@[domain]
+      Call-ID: [call_id]
+      CSeq: [cseq] CANCEL
+      Max-Forwards: 30
+
+    ]]>
+  </send>
+  
+  <recv response="487" response_txn="invite" timeout="8000">
+    <action>
+      <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
+      <ereg regexp=";.*" search_in="hdr" header="To" check_it="false" assign_to="2"/>
+    </action>
+  </recv>
+
+  <send ack_txn="invite">
+    <![CDATA[
+
+      ACK sip:[dnid]@[domain] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port][$1]
+      From: sip:[fromuser]@[domain];tag=[pid]SIPpTag00[call_number]
+      To: sip:[dnid]@[domain][$2]
+      Call-ID: [call_id]
+      CSeq: [cseq] ACK
+      Max-Forwards: 30
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <!-- Check that we got at least a 180, 183 or 200. -->
+  <nop hide="true">
+    <action>
+      <ereg regexp="1" search_in="var" variable="3" check_it="true" assign_to="4"/>
+    </action>
+  </nop>    
+  <nop hide="true" test="4" next="done"/>
+
+  <!-- sipp did not return non-zero with check_it="true" above. But with
+       the timeout of 1 here, it does. -->
+  <recv response="999" timeout="1"/><!-- die die die! -->
+
+
+  <!-- ************************************************************* -->
+  <!-- Got 200, send ACK then BYE -->
+  <!-- ************************************************************* -->
+
+  <label id="ack-bye"/>
+
+  <send ack_txn="invite">
+    <![CDATA[
+
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: sip:[fromuser]@[domain];tag=[pid]SIPpTag00[call_number]
+      To: sip:[dnid]@[domain][$1]
+      Call-ID: [call_id]
+      CSeq: [cseq] ACK
+      Max-Forwards: 30
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <send start_txn="bye">
+    <![CDATA[
+
+      BYE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: sip:[fromuser]@[domain];tag=[pid]SIPpTag00[call_number]
+      To: sip:[dnid]@[domain][$1]
+      Call-ID: [call_id]
+      CSeq: [cseq] BYE
+      Max-Forwards: 30
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="200" response_txn="bye" timeout="8000"/>
+
+
+  <!-- ************************************************************* -->
+  <!-- Done -->
+  <!-- ************************************************************* -->
+
+  <label id="done"/>
+
+</scenario>
