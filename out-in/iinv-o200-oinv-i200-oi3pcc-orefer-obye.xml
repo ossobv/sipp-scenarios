@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="iinv-o200-oinv-i200-oi3pcc-orefer-obye.xml -- wjd 2015">
+
+  <!--
+
+  * Wait for invite.
+  * Initiate hold (a=sendonly).
+  * Poke 3pcc to start setting up a new leg.
+  * Get other dialog info from 3pcc.
+  * Refer other end of this call to the other dialog.
+  * Hang up this leg.
+
+  -->
+
+  <recv request="INVITE" rrs="true"/>
+
+  <send>
+    <![CDATA[
+
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_Record-Route:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <send retrans="500">
+    <![CDATA[
+
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_Record-Route:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+
+    ]]>
+  </send>
+
+  <recv request="ACK" rrs="true">
+    <action>
+      <ereg regexp=": *(.*)" search_in="hdr" header="To" assign_to="_,us"/><!-- with tag -->
+      <ereg regexp=": *(.*)" search_in="hdr" header="From" assign_to="_,them"/>
+    </action>
+  </recv>
+  <Reference variables="_"/>
+
+  <nop>
+    <action>
+      <exec rtp_stream="beep_1sec_50x160b.alaw,1,8"/>
+    </action>
+  </nop>
+  <pause milliseconds="1000"/>
+
+  <!-- Initiate hold (a=sendonly) -->
+  <send retrans="500" start_txn="invite">
+    <![CDATA[
+
+      INVITE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: [$us]
+      To: [$them]
+      Call-ID: [call_id]
+      CSeq: [cseq] INVITE
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687638 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] 0.0.0.0
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+      a=sendonly
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true" response_txn="invite"/>
+
+  <recv response="200" rrs="true" response_txn="invite"/>
+
+  <send ack_txn="invite">
+    <![CDATA[
+
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: [$us]
+      To: [$them]
+      Call-ID: [call_id]
+      CSeq: [cseq] ACK
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <!-- Peer is placed on hold. Poke 3pcc to initiate a second dialog.
+       (Call-ID must be in there. It's a 3pcc limitation/feature.) -->
+  <sendCmd>
+    <![CDATA[
+
+      Call-ID: [call_id]
+
+      Poke the peer. (And tell them our Call-ID at the same time.)
+
+    ]]>
+  </sendCmd>
+
+  <!-- Wait for 3pcc to come up with dialog info that we can steal. -->
+  <recvCmd>
+    <action>
+      <!-- Store next_url in $3 -->
+      <ereg regexp="(sip:[^@]+@[^>;]+)"
+            search_in="hdr"
+            header="Contact:"
+            check_it="true"
+            assign_to="3"/>
+      <!-- Store last_From-tag in $4 -->
+      <ereg regexp="tag=([^;]*)"
+            search_in="hdr"
+            header="From:"
+            check_it="true"
+            assign_to="9,4"/>
+      <!-- Store last_To-tag in $5 -->
+      <ereg regexp="tag=([^;]*)"
+            search_in="hdr"
+            header="To:"
+            check_it="true"
+            assign_to="9,5"/>
+    </action>
+  </recvCmd>
+
+  <!-- Refer the new dialog to the old (our) dialog.
+       Note how we "dedup///" the call_id this time: the peer
+       uses "dedup///[call_id]" as their call id.  -->
+  <send>
+    <![CDATA[
+
+      REFER [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: [$us]
+      To: [$them]
+      Call-ID: [call_id]
+      CSeq: [cseq] REFER
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Referred-By: sip:[service]@[local_ip]:[local_port]
+      Refer-To: <[$3]?Replaces=dedup///[call_id]%3Bto-tag%3D[$5]%3Bfrom-tag%3D[$4]>
+      Content-Length: 0
+
+  ]]>
+  </send>
+
+  <!-- Sometimes the 202 comes before the notify, sometimes after.
+       We'll allow an optional NOTIFY first, and wait for the retransmit to
+       answer it. -->
+  <recv request="NOTIFY" optional="true"/>
+  <recv response="202"/>
+
+  <!-- This should contain a 200 success message, or 180 ringing,
+       depending on the other scenarios. -->
+  <recv request="NOTIFY"/>
+
+  <send>
+    <![CDATA[
+
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Event:]
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <!-- Hang up this old leg. -->
+  <send start_txn="bye">
+    <![CDATA[
+
+      BYE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: [$us]
+      To: [$them]
+      [last_Call-ID:]
+      CSeq: [cseq] BYE
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv response="200" response_txn="bye"/>
+
+</scenario><!-- vim: set ts=8 sw=2 sts=2 et ai: -->

@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="i3pcc-oinv-o3pcc-ibye.xml -- wjd 2015">
+
+  <!--
+
+  * Wait for 3pcc poke.
+  * Invite.
+  * Tell 3pcc about our dialog.
+  * Wait for the call hangup.
+
+  -->
+
+  <!-- Wait for poke before doing anything.
+       Note that we auto-use the Call-ID we get from this 3pcc connection.
+       We don't want that, because this is a different call: hence we
+       prepend "dedup///" everywhere. (MUST be with 3 slashes, or sipp
+       will not recognise that this call_id belongs to this sipp
+       instance. -->
+  <recvCmd/>
+
+  <send retrans="500" start_txn="invite">
+    <![CDATA[
+
+      INVITE sip:[tel]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sip:[service]@[local_ip]:[local_port];tag=[pid]SIPpTag00[call_number]
+      To: sip:[tel]@[remote_ip]:[remote_port]
+      Call-ID: dedup///[call_id]
+      CSeq: [cseq] INVITE
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+
+    ]]>
+  </send>
+
+  <recv response="100" optional="true" response_txn="invite"/>
+
+  <recv response="401" optional="true" auth="true" next="invite-with-auth" rrs="true" response_txn="invite">
+    <action>
+      <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
+    </action>
+  </recv>
+
+  <recv response="407" auth="true" rrs="true" response_txn="invite">
+    <action>
+      <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
+    </action>
+  </recv>
+
+  <label id="invite-with-auth"/>
+
+  <!-- ACK is within transaction because of non-2xx. Reuse Via branch.      -->
+  <!-- We don't use last_Via: because it would include rport stuff from     -->
+  <!-- remote.                                                              -->
+  <send ack_txn="invite">
+    <![CDATA[
+
+      ACK sip:[tel]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port][$1]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      CSeq: [cseq] ACK
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <send retrans="500" start_txn="invite">
+    <![CDATA[
+
+      INVITE sip:[tel]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sip:[service]@[local_ip]:[local_port];tag=[pid]SIPpTag00[call_number]
+      To: sip:[tel]@[remote_ip]:[remote_port]
+      [authentication]
+      Call-ID: dedup///[call_id]
+      CSeq: [cseq] INVITE
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+
+    ]]>
+  </send>
+
+  <recv response="100" response_txn="invite"/>
+
+  <recv response="180" optional="true" response_txn="invite"/>
+
+  <recv response="183" optional="true" response_txn="invite"/>
+
+  <recv response="200" rrs="true" response_txn="invite"/>
+
+  <send ack_txn="invite">
+    <![CDATA[
+
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: sip:[service]@[local_ip]:[local_port];tag=[pid]SIPpTag00[call_number]
+      To: sip:[tel]@[remote_ip]:[remote_port][peer_tag_param]
+      Call-ID: dedup///[call_id]
+      CSeq: [cseq] ACK
+      Contact: sip:[service]@[local_ip]:[local_port]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <nop>
+    <action>
+      <exec rtp_stream="beep_1sec_50x160b.alaw,1,8"/>
+    </action>
+  </nop>
+  <pause milliseconds="1000"/>
+
+  <!-- Send dialog credentials over 3pcc.
+       (Call-ID must be in there.) -->
+  <sendCmd>
+    <![CDATA[
+
+      [last_From:]
+      [last_To:]
+      Call-ID: [call_id]
+      Contact: [next_url]
+
+    ]]>
+  </sendCmd>
+
+  <!-- This call has been replaced and will be cancelled. -->
+  <recv request="BYE"/>
+
+  <send>
+    <![CDATA[
+
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_Record-Route:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <timewait milliseconds="2000"/><!-- retransmit 200's for a while -->
+
+</scenario>

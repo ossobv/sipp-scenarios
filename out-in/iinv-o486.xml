@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="iinv-o486.xml -- wjd 2014">
+  <recv request="INVITE" rrs="true"/>
+
+  <send>
+    <![CDATA[
+
+      SIP/2.0 100 Trying
+      [last_Via:]
+      [last_Record-Route:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <pause milliseconds="1000"/>
+
+  <send retrans="500">
+    <![CDATA[
+
+      SIP/2.0 486 OK
+      [last_Via:]
+      [last_Record-Route:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv request="ACK"/>
+
+  <!-- Keep call open to be able to retransmit 486 -->
+  <timewait milliseconds="2000"/>
+</scenario><!-- vim: set ts=8 sw=2 sts=2 et ai: -->
