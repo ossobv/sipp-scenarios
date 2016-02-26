@@ -54,9 +54,16 @@
   </recv>
   <Reference variables="_"/>
 
+  <!-- Send some audio to avoid rtptimeout timers kicking in. -->
+  <nop>
+    <action>
+      <exec rtp_stream="beep_1sec_50x160b.alaw,-1,8"/>
+    </action>
+  </nop>
+
   <pause milliseconds="1000"/>
 
-  <send start_txn="bye">
+  <send start_txn="bye" retrans="500">
     <![CDATA[
 
       BYE [next_url] SIP/2.0
