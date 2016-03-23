@@ -7,7 +7,7 @@
   NOTE: Creating a sendfax.pcap is as easy as:
   - receive a fax with asterisk
   - get the incoming side of the spansdp.log
-  - feed it to https://github.com/ossobv/voiputil/blob/master/spandspflow2pcap.py
+  - feed it to https://github.com/asterisk/asterisk/blob/master/contrib/scripts/spandspflow2pcap.py
 
   -->
 
