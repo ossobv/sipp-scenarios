@@ -41,13 +41,13 @@
 
   <recv response="100" optional="true" response_txn="invite"/>
 
-  <recv response="401" optional="true" auth="true" next="invite-with-auth" rrs="true" response_txn="invite">
+  <recv response="401" optional="true" auth="true" next="invite-with-auth" response_txn="invite">
     <action>
       <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
     </action>
   </recv>
 
-  <recv response="407" auth="true" rrs="true" response_txn="invite">
+  <recv response="407" auth="true" response_txn="invite">
     <action>
       <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
     </action>

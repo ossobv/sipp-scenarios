@@ -32,14 +32,14 @@
 
   <recv response="100" optional="true" response_txn="invite"/>
 
-  <recv response="401" optional="true" next="invite-with-auth" auth="true" rrs="true" response_txn="invite">
+  <recv response="401" optional="true" next="invite-with-auth" auth="true" response_txn="invite">
     <action>
       <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
       <ereg regexp=";.*" search_in="hdr" header="To" check_it="false" assign_to="2"/>
     </action>
   </recv>
 
-  <recv response="407" auth="true" rrs="true" response_txn="invite">
+  <recv response="407" auth="true" response_txn="invite">
     <action>
       <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
       <ereg regexp=";.*" search_in="hdr" header="To" check_it="false" assign_to="2"/>
@@ -101,7 +101,7 @@
 
   <recv response="183" optional="true" response_txn="invite"/>
 
-  <recv response="486" auth="true" rrs="true" response_txn="invite">
+  <recv response="486" auth="true" response_txn="invite">
     <action>
       <ereg regexp=";branch=[^;]*" search_in="hdr" header="Via" check_it="false" assign_to="1"/>
       <ereg regexp=";.*" search_in="hdr" header="To" check_it="false" assign_to="2"/>
